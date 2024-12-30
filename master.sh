@@ -62,7 +62,7 @@ sudo apt install -y containerd
 kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
 
 # Initialize Kubernetes master node
-sudo kubeadm init
+sudo kubeadm init --pod-network-cidr=192.168.0.0/16
 
 # Set up kubeconfig
 mkdir -p $HOME/.kube
@@ -70,5 +70,6 @@ sudo cp -f /etc/kubernetes/admin.conf $HOME/.kube/config
 sudo chown $(id -u):$(id -g) $HOME/.kube/config
 export KUBECONFIG=/etc/kubernetes/admin.conf
 
+kubectl apply -f https://reweave.azurewebsites.net/k8s/v1.30/net.yaml
 echo "Kubernetes setup completed."
 
