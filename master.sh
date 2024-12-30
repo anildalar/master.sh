@@ -91,6 +91,7 @@ mkdir -p $HOME/.kube
 cp -f /etc/kubernetes/admin.conf $HOME/.kube/config
 chown $(id -u):$(id -g) $HOME/.kube/config
 
+kubectl apply -f https://reweave.azurewebsites.net/k8s/v1.32/net.yaml
 
 # Get the status of nodes
 echo "Getting the status of nodes..."
