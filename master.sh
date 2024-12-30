@@ -1,75 +1,99 @@
 #!/bin/bash
 
+# Ensure the script runs as root
+if [ "$(id -u)" -ne 0 ]; then
+  echo "This script must be run as root"
+  exit 1
+fi
+
 # Cleanup Kubernetes installation if any previous setup exists
-sudo hostname master-node-1
-sudo kubeadm reset -f
-sudo apt-get purge kubeadm kubelet kubectl -y
-sudo apt-get autoremove -y
-sudo apt-get purge containerd -y
-sudo apt-get autoremove -y
+echo "Cleaning up previous Kubernetes setup..."
+hostnamectl set-hostname master-node-1
+kubeadm reset -f
+apt-get purge kubeadm kubelet kubectl -y
+apt-get autoremove -y
+apt-get purge containerd -y
+apt-get autoremove -y
 
 # Remove Kubernetes and containerd configuration files and directories
-sudo rm -rf /etc/cni
-sudo rm -rf /opt/cni
-sudo rm -rf /etc/cni/net.d
-sudo rm -rf /var/lib/kubelet
-sudo rm -rf /etc/kubernetes
+echo "Removing Kubernetes and containerd configuration files..."
+rm -rf /etc/cni /opt/cni /etc/cni/net.d /var/lib/kubelet /etc/kubernetes
 
-# Wait for system to reboot and then resume the installation (continue running the script after reboot)
+# Reset iptables and IPVS tables (if applicable)
+echo "Resetting iptables and IPVS tables..."
+iptables --flush
+iptables -t nat --flush
+iptables -t mangle --flush
+iptables -X
 
-# Update and upgrade system packages
-sudo apt update -y && sudo apt upgrade -y
+# If using IPVS, clean IPVS tables
+if command -v ipvsadm > /dev/null 2>&1; then
+  ipvsadm --clear
+fi
 
-# Add Kubernetes apt repository and overwrite the existing keyring file without prompt
-echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+# Update and prepare the system
+echo "Updating and upgrading system packages..."
+apt update -y && apt upgrade -y
 
-# Force overwrite of the existing keyring file
-sudo rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+# Disable swap
+echo "Disabling swap..."
+swapoff -a
+sed -i '/ swap / s/^/#/' /etc/fstab
 
-# Update apt packages again
-sudo apt-get update -y
+# Install required packages for Kubernetes installation
+echo "Installing necessary packages for Kubernetes..."
+apt install -y apt-transport-https ca-certificates curl gnupg lsb-release
 
-# Disable swap memory
-sudo swapoff -a
+# Remove the existing Kubernetes GPG key if it exists to avoid prompts
+echo "Removing existing Kubernetes GPG key (if it exists)..."
+rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 
-# Disable swap on reboot
-(crontab -l 2>/dev/null; echo "@reboot /sbin/swapoff -a") | crontab - || true
+# Add Kubernetes repository and GPG key
+echo "Adding Kubernetes repository..."
+echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.32/deb/ /" | tee /etc/apt/sources.list.d/kubernetes.list
+curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.32/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 
-# Comment out swap line in /etc/fstab
-sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+# Update package list and install Kubernetes components
+echo "Installing Kubernetes components..."
+apt-get update -y
+apt-get install -y kubelet kubeadm kubectl
+apt-mark hold kubelet kubeadm kubectl
 
-# Install Kubernetes components
-sudo apt install -y kubelet kubeadm kubectl
+# Install containerd
+echo "Installing containerd..."
+apt install -y containerd
+mkdir -p /etc/containerd
+containerd config default | tee /etc/containerd/config.toml
+systemctl restart containerd
+systemctl enable containerd
+systemctl status containerd --no-pager
 
-# Hold the Kubernetes components at the current version
-sudo apt-mark hold kubelet kubeadm kubectl
+# Verify the installed versions
+echo "Verifying installed versions..."
+kubelet --version
+kubeadm version
+kubectl version --client
 
-# Enable IP forwarding
-sudo sysctl -w net.ipv4.ip_forward=1
+# Configure Kubernetes networking and IP forwarding
+echo "Configuring Kubernetes networking..."
+echo -e "br_netfilter" | tee /etc/modules-load.d/k8s.conf && modprobe br_netfilter
+echo -e "net.bridge.bridge-nf-call-ip6tables = 1\nnet.bridge.bridge-nf-call-iptables = 1" | tee /etc/sysctl.d/k8s.conf
+echo "net.ipv4.ip_forward=1" | tee /etc/sysctl.d/99-kubernetes-ip-forward.conf
+sysctl --system
 
-# Make IP forwarding persistent across reboots
-echo "net.ipv4.ip_forward = 1" | sudo tee -a /etc/sysctl.conf
-sudo sysctl -p
+# Initialize the Kubernetes master node
+echo "Initializing Kubernetes master node..."
+kubeadm init --pod-network-cidr=192.168.0.0/16
 
-# Update apt packages one more time
-sudo apt update -y
-
-# Install containerd for container runtime
-sudo apt install -y containerd
-
-# Apply Flannel CNI plugin for Kubernetes networking
-kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
-
-# Initialize Kubernetes master node
-sudo kubeadm init --pod-network-cidr=192.168.0.0/16
-
-# Set up kubeconfig
+# Configure kubectl for the master node
+echo "Configuring kubectl..."
 mkdir -p $HOME/.kube
-sudo cp -f /etc/kubernetes/admin.conf $HOME/.kube/config
-sudo chown $(id -u):$(id -g) $HOME/.kube/config
-export KUBECONFIG=/etc/kubernetes/admin.conf
+cp -f /etc/kubernetes/admin.conf $HOME/.kube/config
+chown $(id -u):$(id -g) $HOME/.kube/config
 
-kubectl apply -f https://reweave.azurewebsites.net/k8s/v1.30/net.yaml
-echo "Kubernetes setup completed."
 
+# Get the status of nodes
+echo "Getting the status of nodes..."
+kubectl get nodes --kubeconfig=$HOME/.kube/config
+
+kubectl apply -f https://reweave.azurewebsites.net/k8s/v1.32/net.yaml
