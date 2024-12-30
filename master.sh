@@ -56,7 +56,7 @@ curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.32/deb/Release.key | gpg --dearm
 # Update package list and install Kubernetes components
 echo "Installing Kubernetes components..."
 apt-get update -y
-apt-get install -y kubelet kubeadm kubectl
+apt-get install -y kubelet kubeadm kubectl --allow-change-held-packages
 apt-mark hold kubelet kubeadm kubectl
 
 # Install containerd
