@@ -30,3 +30,4 @@ export KUBECONFIG=/etc/kubernetes/admin.conf
 kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml
 kubectl get nodes
 kubectl get pods --all-namespaces
+kubeadm token create --print-join-command --ttl 0
