@@ -32,3 +32,9 @@ kubectl get nodes
 kubectl get pods --all-namespaces
 kubeadm token create --print-join-command --ttl 0
 curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
+helm version
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm repo update
+helm install ingress-nginx ingress-nginx/ingress-nginx --namespace ingress-nginx --create-namespace
+kubectl get pods -n ingress-nginx
+kubectl get svc -n ingress-nginx
