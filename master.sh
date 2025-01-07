@@ -31,3 +31,4 @@ kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/
 kubectl get nodes
 kubectl get pods --all-namespaces
 kubeadm token create --print-join-command --ttl 0
+curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
